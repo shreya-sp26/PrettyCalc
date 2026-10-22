@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PrettyCalc</title>
+<style>
+  :root { --pink-bg:#f9e2f4; --display:#fffaf6; --ink:#75417f; --purple:#c4a0df; --hot-pink:#ee8ac5; --heading:#9859b7; }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; min-height:100vh; display:flex; justify-content:center; align-items:flex-start;
+    background:var(--pink-bg); color:var(--ink);
+    font-family:Arial, Helvetica, sans-serif;
+  }
+  .app { width:min(100%, 460px); padding:22px 17px 18px; }
+  h1 { margin:2px 0 17px; text-align:center; color:var(--heading); font-size:30px; line-height:1.15; font-weight:700; }
+  .display {
+    height:152px; background:var(--display); border:2px solid #f2bce0;
+    margin-bottom:17px; padding:13px 16px 18px; display:flex; flex-direction:column;
+    justify-content:flex-end; align-items:stretch; overflow:hidden;
+  }
+  .expression {
+    width:100%; min-height:24px; text-align:right; font-size:17px; color:#a27bac;
+    overflow-wrap:anywhere; line-height:1.35;
+  }
+  .result {
+    width:100%; text-align:right; font-size:40px; font-weight:700; line-height:1.2;
+    overflow-wrap:anywhere; color:var(--ink);
+  }
+  .keys { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:11px; }
+  button {
+    height:56px; border:0; border-radius:0; background:var(--display); color:var(--ink);
+    font-family:inherit; font-size:24px; font-weight:600; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button:active { filter:brightness(.96); transform:scale(.98); }
+  .operator { background:var(--purple); }
+  .equals { background:var(--hot-pink); }
+  .backspace { font-size:25px; }
+  @media (max-width:380px) {
+    .app { padding:18px 12px; }
+    h1 { font-size:27px; }
+    .keys { gap:8px; }
+    button { height:53px; font-size:22px; }
+    .display { height:145px; }
+  }
+</style>
+</head>
+<body>
+<main class="app" aria-label="PrettyCalc calculator">
+  <h1>♡ PrettyCalc ♡</h1>
+  <section class="display" aria-live="polite" aria-atomic="true">
+    <div class="expression" id="expression"></div>
+    <div class="result" id="result">0</div>
+  </section>
+  <section class="keys" id="keys" aria-label="Calculator buttons">
+    <button data-action="all-clear">AC</button>
+    <button data-action="clear-entry">CE</button>
+    <button data-action="percent">%</button>
+    <button class="operator" data-op="÷" aria-label="Divide">÷</button>
+
+    <button data-num="7">7</button>
+    <button data-num="8">8</button>
+    <button data-num="9">9</button>
+    <button class="operator" data-op="×" aria-label="Multiply">×</button>
+
+    <button data-num="4">4</button>
+    <button data-num="5">5</button>
+    <button data-num="6">6</button>
+    <button class="operator" data-op="−" aria-label="Subtract">−</button>
+
+    <button data-num="1">1</button>
+    <button data-num="2">2</button>
+    <button data-num="3">3</button>
+    <button class="operator" data-op="+" aria-label="Add">+</button>
+
+    <button data-num="0">0</button>
+    <button data-action="decimal">.</button>
+    <button class="equals" data-action="equals">=</button>
+    <button class="backspace" data-action="backspace" aria-label="Backspace">⌫</button>
+  </section>
+</main>
+<script>
+(() => {
+  const resultEl = document.getElementById('result');
+  const expressionEl = document.getElementById('expression');
+  const keys = document.getElementById('keys');
+
+  let current = '0';
+  let storedValue = null;
+  let operator = null;
+  let waitingForOperand = false;
+  let justCalculated = false;
+
+  const render = () => { resultEl.textContent = current; };
+  const format = value => {
+    if (!Number.isFinite(value)) throw new Error('Cannot calculate');
+    return String(Number(value.toPrecision(12)));
+  };
+  const calculate = (a, op, b) => {
+    switch (op) {
+      case '+': return a + b;
+      case '−': return a - b;
+      case '×': return a * b;
+      case '÷':
+        if (b === 0) throw new Error('Cannot divide by zero');
+        return a / b;
+      default: return b;
+    }
+  };
+  const showPendingExpression = () => {
+    if (operator !== null && storedValue !== null) {
+      expressionEl.textContent = `${format(storedValue)} ${operator}${waitingForOperand ? '' : ' ' + current}`;
+    }
+  };
+  const inputDigit = digit => {
+    if (current === 'Error') clearAll();
+    if (waitingForOperand || justCalculated) {
+      current = digit;
+      waitingForOperand = false;
+      justCalculated = false;
+    } else if (current === '0') {
+      current = digit;
+    } else if (current.replace('-', '').replace('.', '').length < 14) {
+      current += digit;
+    }
+    render();
+    showPendingExpression();
+  };
+  const inputDecimal = () => {
+    if (current === 'Error') clearAll();
+    if (waitingForOperand || justCalculated) {
+      current = '0.';
+      waitingForOperand = false;
+      justCalculated = false;
+    } else if (!current.includes('.')) {
+      current += '.';
+    }
+    render();
+    showPendingExpression();
+  };
+  const chooseOperator = nextOperator => {
+    if (current === 'Error') return;
+    const inputValue = Number(current);
+    if (operator !== null && !waitingForOperand && storedValue !== null) {
+      try {
+        current = format(calculate(storedValue, operator, inputValue));
+        render();
+        storedValue = Number(current);
+      } catch (error) {
+        current = 'Error'; render(); expressionEl.textContent = error.message;
+        storedValue = null; operator = null; waitingForOperand = true; return;
+      }
+    } else {
+      storedValue = inputValue;
+    }
+    operator = nextOperator;
+    waitingForOperand = true;
+    justCalculated = false;
+    expressionEl.textContent = `${format(storedValue)} ${operator}`;
+  };
+  const equals = () => {
+    if (operator === null || storedValue === null || current === 'Error') return;
+    const a = storedValue, op = operator, b = Number(current);
+    try {
+      current = format(calculate(a, op, b));
+      expressionEl.textContent = `${format(a)} ${op} ${format(b)} =`;
+    } catch (error) {
+      current = 'Error';
+      expressionEl.textContent = error.message;
+    }
+    storedValue = null;
+    operator = null;
+    waitingForOperand = true;
+    justCalculated = true;
+    render();
+  };
+  const clearAll = () => {
+    current = '0'; storedValue = null; operator = null;
+    waitingForOperand = false; justCalculated = false;
+    expressionEl.textContent = '';
+    render();
+  };
+  const clearEntry = () => {
+    current = '0'; waitingForOperand = false; justCalculated = false;
+    render(); showPendingExpression();
+  };
+  const percent = () => {
+    if (current === 'Error') return;
+    current = format(Number(current) / 100);
+    waitingForOperand = false; justCalculated = false;
+    render(); showPendingExpression();
+  };
+  const backspace = () => {
+    if (current === 'Error' || waitingForOperand || justCalculated) {
+      current = '0';
+      if (justCalculated) { storedValue = null; operator = null; expressionEl.textContent = ''; }
+      waitingForOperand = false; justCalculated = false;
+    } else if (current.length > 1) {
+      current = current.slice(0, -1);
+      if (current === '-') current = '0';
+    } else {
+      current = '0';
+    }
+    render(); showPendingExpression();
+  };
+  const toggleSign = () => {
+    if (current === '0' || current === 'Error') return;
+    current = current.startsWith('-') ? current.slice(1) : '-' + current;
+    render(); showPendingExpression();
+  };
+
+  keys.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.dataset.num !== undefined) return inputDigit(button.dataset.num);
+    if (button.dataset.op) return chooseOperator(button.dataset.op);
+    switch (button.dataset.action) {
+      case 'all-clear': clearAll(); break;
+      case 'clear-entry': clearEntry(); break;
+      case 'percent': percent(); break;
+      case 'decimal': inputDecimal(); break;
+      case 'equals': equals(); break;
+      case 'backspace': backspace(); break;
+      case 'sign': toggleSign(); break;
+    }
+  });
+
+  document.addEventListener('keydown', event => {
+    if (/^[0-9]$/.test(event.key)) inputDigit(event.key);
+    else if (event.key === '.') inputDecimal();
+    else if (event.key === '+') chooseOperator('+');
+    else if (event.key === '-') chooseOperator('−');
+    else if (event.key === '*') chooseOperator('×');
+    else if (event.key === '/') { event.preventDefault(); chooseOperator('÷'); }
+    else if (event.key === 'Enter' || event.key === '=') { event.preventDefault(); equals(); }
+    else if (event.key === 'Escape') clearAll();
+    else if (event.key === 'Backspace') backspace();
+    else if (event.key === '%') percent();
+  });
+})();
+</script>
+</body>
+</html>
